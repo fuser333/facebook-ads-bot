@@ -1,190 +1,112 @@
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning, module='urllib3')
-
 import requests
-import json
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timedelta
+import urllib3
+import warnings
 
-# Variables de la aplicación
-app_id = '823040352757676'
-app_secret = 'db46c9d90dfa967520a0fd7dcd15d5f6'
-ACCESS_TOKEN = 'EAALsjQPcp6wBO2My9QMqcfhDwyaf1hMoSUKpGQYIFZARjLBXrLA51ZCyUrEdcnmoZAMKqsTZB5huf8NDaVGYkKy0kR0x6BYjmy6PwurphDri2hPCU4PEjs9Jf5dajysQCriSZAptNwh9RDHu0dLI3SRFN3mZAgfJUwVJ4EtzU0ZC2Pmh43EJwIRcm9m'  # Token de acceso a largo plazo
-AD_ACCOUNT_ID = '206988452103586'  # Sin el prefijo 'act_'
-API_VERSION = 'v13.0'
-BASE_URL = f'https://graph.facebook.com/{API_VERSION}/'
+# Suprimir advertencias de urllib3 sobre OpenSSL
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+warnings.filterwarnings("ignore", category=urllib3.exceptions.InsecureRequestWarning)
 
-# Función para renovar el token de acceso
-def renew_access_token():
-    global ACCESS_TOKEN
-    url = f"https://graph.facebook.com/{API_VERSION}/oauth/access_token"
+# Datos de autenticación y configuración
+ACCESS_TOKEN = 'EAALsjQPcp6wBOz4mUj3RP1mZBXye6wNqeVJOLiN8b2n0zacbLFElAewdRKVT1td5rvLl4xG9wpJysALmDhPSDMibQ9fYrj7fjkRvkPexSsoCm0ZCBHx7m85J1xLW74L3SJ9CcZBzlQ5odU4yRkmDoFMJPHY3IEzOvDkah8fXRtdpwpM90SCKXYz'
+AD_ACCOUNT_ID = '206988452103586'
+EMAIL_USER = 'ingfuser33@gmail.com'
+EMAIL_PASS = 'wtilmqzdhyoyynai'
+
+def get_active_campaigns():
+    url = f"https://graph.facebook.com/v14.0/act_{AD_ACCOUNT_ID}/campaigns"
     params = {
-        'grant_type': 'fb_exchange_token',
-        'client_id': app_id,
-        'client_secret': app_secret,
-        'fb_exchange_token': ACCESS_TOKEN
+        'access_token': ACCESS_TOKEN,
+        'effective_status': ['ACTIVE'],
+        'fields': 'name,objective,status'
     }
     response = requests.get(url, params=params)
-    ACCESS_TOKEN = response.json().get('access_token')
-    print("Token de acceso renovado:", ACCESS_TOKEN)
+    return response.json()
 
-# Función para enviar correos electrónicos
-def send_email(subject, body, to_email):
-    from_email = "ingfuser33@gmail.com"
-    from_password = "wtilmqzdhyoyynai"  # Usa aquí tu contraseña de aplicación generada
+def get_adset_insights(adset_id):
+    url = f"https://graph.facebook.com/v14.0/{adset_id}/insights"
+    params = {
+        'access_token': ACCESS_TOKEN,
+        'fields': 'impressions,clicks,spend,cpm,cpc,ctr'
+    }
+    response = requests.get(url, params=params)
+    return response.json()
+
+def send_email(subject, body):
     msg = MIMEMultipart()
-    msg["From"] = from_email
-    msg["To"] = to_email
-    msg["Subject"] = subject
-
-    msg.attach(MIMEText(body, "plain"))
-
-    try:
-        server = smtplib.SMTP("smtp.gmail.com", 587)
+    msg['From'] = EMAIL_USER
+    msg['To'] = EMAIL_USER
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'plain'))
+    
+    with smtplib.SMTP('smtp.gmail.com', 587) as server:
         server.starttls()
-        server.login(from_email, from_password)
+        server.login(EMAIL_USER, EMAIL_PASS)
         text = msg.as_string()
-        server.sendmail(from_email, to_email, text)
-        server.quit()
-        print("Correo enviado exitosamente")
-    except Exception as e:
-        print(f"Error al enviar correo: {e}")
+        server.sendmail(EMAIL_USER, EMAIL_USER, text)
 
-# Funciones para obtener campañas, conjuntos de anuncios e insights
-def get_campaigns(access_token):
-    url = f"{BASE_URL}act_{AD_ACCOUNT_ID}/campaigns"
+def adjust_budget(adset_id, new_budget):
+    url = f"https://graph.facebook.com/v14.0/{adset_id}"
     params = {
-        'access_token': access_token,
-        'fields': 'id,name,status',
-        'effective_status': json.dumps(['ACTIVE'])
+        'access_token': ACCESS_TOKEN,
+        'daily_budget': new_budget
     }
-    response = requests.get(url, params=params)
+    response = requests.post(url, data=params)
     return response.json()
 
-def get_adsets(campaign_id, access_token):
-    url = f"{BASE_URL}{campaign_id}/adsets"
-    params = {
-        'access_token': access_token,
-        'fields': 'id,name,status',
-        'effective_status': json.dumps(['ACTIVE'])
-    }
-    response = requests.get(url, params=params)
-    return response.json()
-
-def get_insights(adset_id, access_token):
-    url = f"{BASE_URL}{adset_id}/insights"
-    params = {
-        'access_token': access_token,
-        'fields': 'impressions,clicks,spend,cpm,cpc,ctr',
-        'time_range': json.dumps({
-            'since': (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d'),
-            'until': datetime.now().strftime('%Y-%m-%d')
-        })
-    }
-    response = requests.get(url, params=params)
-    return response.json()
-
-def update_adset(adset_id, new_budget, access_token):
-    url = f"{BASE_URL}{adset_id}"
-    payload = {
-        'daily_budget': new_budget,
-        'access_token': access_token
-    }
-    response = requests.post(url, data=payload)
-    return response.json()
-
-# Función para chequear y actualizar el conjunto de anuncios basado en el rendimiento
-def check_and_update_adset(adset_id, adset_name, insights, access_token):
-    if 'data' in insights:
-        insights_data = insights['data']
-        if not insights_data:
-            print(f"No hay datos de rendimiento para el conjunto de anuncios {adset_name}.")
-        else:
-            for insight in insights_data:
-                impressions = insight.get('impressions', 'N/A')
-                clicks = insight.get('clicks', 'N/A')
-                spend = insight.get('spend', 'N/A')
-                cpm = insight.get('cpm', 'N/A')
-                cpc = insight.get('cpc', 'N/A')
-                ctr = insight.get('ctr', 'N/A')
-
-                print(f"Insights para {adset_name}:")
-                print(f"  Impresiones: {impressions}")
-                print(f"  Clicks: {clicks}")
-                print(f"  Gasto: {spend}")
-                print(f"  CPM: {cpm}")
-                print(f"  CPC: {cpc}")
-                print(f"  CTR: {ctr}")
-
-                # Definir umbrales de rendimiento
-                target_ctr = 1.0
-                target_leads = 10
-                if ctr != 'N/A' and float(ctr) < target_ctr:
-                    new_budget = 5000  # Aumenta el presupuesto en base a tus necesidades
-                    update_response = update_adset(adset_id, new_budget, access_token)
-                    print(f"Presupuesto actualizado para {adset_name}: {update_response}")
-
-                # Enviar correo de notificación
-                subject = f"Rendimiento del Conjunto de Anuncios: {adset_name}"
-                body = (f"Conjunto de Anuncios: {adset_name}\n"
-                        f"Impresiones: {impressions}\n"
-                        f"Clicks: {clicks}\n"
-                        f"Gasto: {spend}\n"
-                        f"CPM: {cpm}\n"
-                        f"CPC: {cpc}\n"
-                        f"CTR: {ctr}\n")
-
-                send_email(subject, body, to_email)
-    else:
-        print(f"Error al obtener insights para {adset_name}: {insights}")
+def main():
+    campaigns = get_active_campaigns()
+    if 'data' in campaigns:
+        for campaign in campaigns['data']:
+            campaign_id = campaign['id']
+            campaign_name = campaign['name']
+            
+            adsets_url = f"https://graph.facebook.com/v14.0/{campaign_id}/adsets"
+            adsets_params = {
+                'access_token': ACCESS_TOKEN,
+                'fields': 'name'
+            }
+            adsets_response = requests.get(adsets_url, params=adsets_params)
+            adsets = adsets_response.json()
+            
+            if 'data' in adsets:
+                for adset in adsets['data']:
+                    adset_id = adset['id']
+                    adset_name = adset['name']
+                    insights = get_adset_insights(adset_id)
+                    
+                    if 'data' in insights and len(insights['data']) > 0:
+                        insight = insights['data'][0]
+                        impressions = int(insight['impressions'])
+                        clicks = int(insight['clicks'])
+                        spend = float(insight['spend'])
+                        cpm = float(insight['cpm'])
+                        cpc = float(insight['cpc'])
+                        ctr = float(insight['ctr'])
+                        
+                        # Analizar y ajustar presupuesto
+                        if ctr > 5.0 and cpc < 0.05:
+                            new_budget = 2 * spend
+                        else:
+                            new_budget = 0.5 * spend
+                        
+                        adjust_budget(adset_id, new_budget)
+                        
+                        email_subject = f"Insights para {adset_name} en {campaign_name}"
+                        email_body = f"""
+                        Campaña: {campaign_name}
+                        Conjunto de anuncios: {adset_name}
+                        Impresiones: {impressions}
+                        Clicks: {clicks}
+                        Gasto: {spend}
+                        CPM: {cpm}
+                        CPC: {cpc}
+                        CTR: {ctr}
+                        Nuevo presupuesto: {new_budget}
+                        """
+                        send_email(email_subject, email_body)
 
 if __name__ == "__main__":
-    to_email = "ingfuser33@gmail.com"
-
-    # Renovar el token de acceso
-    renew_access_token()
-
-    # Obtener campañas activas
-    print("Obteniendo campañas activas...")
-    campaigns = get_campaigns(ACCESS_TOKEN)
-    
-    if 'data' in campaigns:
-        campaign_data = campaigns['data']
-        if not campaign_data:
-            print("No hay campañas activas.")
-        else:
-            for campaign in campaign_data:
-                campaign_id = campaign['id']
-                campaign_name = campaign['name']
-                print(f"Campaña activa: {campaign_name} (ID: {campaign_id})")
-                
-                # Obtener conjuntos de anuncios activos
-                print(f"Obteniendo conjuntos de anuncios activos para la campaña {campaign_name}...")
-                adsets = get_adsets(campaign_id, ACCESS_TOKEN)
-                
-                if 'data' in adsets:
-                    adset_data = adsets['data']
-                    if not adset_data:
-                        print(f"No hay conjuntos de anuncios activos para la campaña {campaign_name}.")
-                    else:
-                        for adset in adset_data:
-                            adset_id = adset['id']
-                            adset_name = adset['name']
-                            print(f"Conjunto de anuncios activo: {adset_name} (ID: {adset_id})")
-                            
-                            # Obtener insights del conjunto de anuncios
-                            print(f"Obteniendo insights para el conjunto de anuncios {adset_name}...")
-                            insights = get_insights(adset_id, ACCESS_TOKEN)
-                            
-                            # Chequear y actualizar conjunto de anuncios basado en el rendimiento
-                            check_and_update_adset(adset_id, adset_name, insights, ACCESS_TOKEN)
-                else:
-                    print(f"Error obteniendo conjuntos de anuncios para la campaña {campaign_name}: {adsets}")
-    else:
-        print(f"Error obteniendo campañas: {campaigns}")
-
-
-
-
+    main()
